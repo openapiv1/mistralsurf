@@ -51,6 +51,9 @@ export async function POST(request: Request) {
   // Hardcoded E2B API key as requested
   const apiKey = "e2b_8a5c7099485b881be08b594be7b7574440adf09c";
 
+  // Set environment variable for E2B SDK
+  process.env.E2B_API_KEY = apiKey;
+
   if (!apiKey) {
     return new Response("E2B API key not found", { status: 500 });
   }
@@ -62,10 +65,10 @@ export async function POST(request: Request) {
   try {
     if (!activeSandboxId) {
       const newSandbox = await Sandbox.create({
-        apiKey, // Pass the hardcoded API key
         resolution,
         dpi: 96,
         timeoutMs: SANDBOX_TIMEOUT_MS,
+        apiKey, // Pass the hardcoded API key explicitly
       });
 
       await newSandbox.stream.start();
@@ -115,6 +118,7 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     logError("Error connecting to sandbox:", error);
-    return new Response("Failed to connect to sandbox", { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return new Response(`Failed to connect to sandbox: ${errorMessage}`, { status: 500 });
   }
 }

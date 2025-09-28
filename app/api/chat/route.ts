@@ -6,6 +6,7 @@ import {
 } from "@/lib/streaming";
 import { SANDBOX_TIMEOUT_MS } from "@/lib/config";
 import { OpenAIComputerStreamer } from "@/lib/streaming/openai";
+import { MistralComputerStreamer } from "@/lib/streaming/mistral";
 import { logError } from "@/lib/logger";
 import { ResolutionScaler } from "@/lib/streaming/resolution";
 
@@ -20,6 +21,8 @@ class StreamerFactory {
     const resolutionScaler = new ResolutionScaler(desktop, resolution);
 
     switch (model) {
+      case "mistral":
+        return new MistralComputerStreamer(desktop, resolutionScaler);
       case "anthropic":
       // currently not implemented
       /* return new AnthropicComputerStreamer(desktop, resolutionScaler); */
@@ -42,10 +45,11 @@ export async function POST(request: Request) {
     messages,
     sandboxId,
     resolution,
-    model = "openai",
+    model = "mistral",
   } = await request.json();
 
-  const apiKey = process.env.E2B_API_KEY;
+  // Hardcoded E2B API key as requested
+  const apiKey = "e2b_8a5c7099485b881be08b594be7b7574440adf09c";
 
   if (!apiKey) {
     return new Response("E2B API key not found", { status: 500 });
@@ -58,6 +62,7 @@ export async function POST(request: Request) {
   try {
     if (!activeSandboxId) {
       const newSandbox = await Sandbox.create({
+        apiKey, // Pass the hardcoded API key
         resolution,
         dpi: 96,
         timeoutMs: SANDBOX_TIMEOUT_MS,
@@ -69,7 +74,7 @@ export async function POST(request: Request) {
       vncUrl = newSandbox.stream.getUrl();
       desktop = newSandbox;
     } else {
-      desktop = await Sandbox.connect(activeSandboxId);
+      desktop = await Sandbox.connect(activeSandboxId, { apiKey }); // Pass API key for connection too
     }
 
     if (!desktop) {

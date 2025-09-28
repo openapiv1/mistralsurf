@@ -3,21 +3,22 @@ import "@/styles/globals.css";
 import { Metadata } from "next";
 import { Toaster } from "sonner";
 import { Providers } from "../components/providers";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+// import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { ChatProvider } from "@/lib/chat-context";
 import { Analytics } from "@vercel/analytics/react";
 
-const ibmPlexSans = IBM_Plex_Sans({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-ibm-plex-sans",
-});
+// Temporarily disabled due to network issues in build environment
+// const ibmPlexSans = IBM_Plex_Sans({
+//   subsets: ["latin"],
+//   weight: ["400", "500", "600", "700"],
+//   variable: "--font-ibm-plex-sans",
+// });
 
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-ibm-plex-mono",
-});
+// const ibmPlexMono = IBM_Plex_Mono({
+//   subsets: ["latin"],
+//   weight: ["400", "500", "600", "700"],
+//   variable: "--font-ibm-plex-mono",
+// });
 
 export const metadata: Metadata = {
   title: "Surf - E2B Computer Use Agent",
@@ -43,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${ibmPlexSans.variable} ${ibmPlexMono.variable}`}
+        className="" // Temporarily removed font classes
         suppressHydrationWarning
       >
         <Providers>

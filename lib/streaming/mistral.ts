@@ -7,7 +7,7 @@ import {
 } from "@/lib/streaming";
 import { ActionResponse } from "@/types/api";
 import { ResolutionScaler } from "./resolution";
-import { MistralComputerAction, MistralTool, MistralStreamChunk } from "@/types/mistral";
+import { MistralComputerAction } from "@/types/mistral";
 import { logError, logDebug } from "../logger";
 
 const INSTRUCTIONS = `
@@ -236,8 +236,8 @@ export class MistralComputerStreamer
         const modelResolution = this.resolutionScaler.getScaledResolution();
 
         // Define the computer tool for Mistral
-        const computerTool: MistralTool = {
-          type: "function",
+        const computerTool = {
+          type: "function" as const,
           function: {
             name: "computer",
             description: "Control the computer by performing various actions like clicking, typing, scrolling, etc.",
@@ -317,7 +317,7 @@ export class MistralComputerStreamer
         let assistantMessage = "";
         let toolCalls: any[] = [];
 
-        for await (const chunk of response) {
+        for await (const event of response) {
           if (signal?.aborted) {
             yield {
               type: SSEEventType.DONE,
@@ -326,24 +326,26 @@ export class MistralComputerStreamer
             return;
           }
 
+          const chunk = event.data;
           const choice = chunk.choices?.[0];
           if (!choice) continue;
 
           const delta = choice.delta;
 
           if (delta.content) {
-            assistantMessage += delta.content;
+            const content = typeof delta.content === 'string' ? delta.content : JSON.stringify(delta.content);
+            assistantMessage += content;
             yield {
               type: SSEEventType.UPDATE,
-              content: delta.content,
+              content: content,
             };
           }
 
-          if (delta.tool_calls) {
-            toolCalls.push(...delta.tool_calls);
+          if (delta.toolCalls) {
+            toolCalls.push(...delta.toolCalls);
           }
 
-          if (choice.finish_reason === "tool_calls") {
+          if (choice.finishReason === "tool_calls") {
             // Execute tool calls
             for (const toolCall of toolCalls) {
               try {
@@ -384,7 +386,7 @@ export class MistralComputerStreamer
             // Reset for next iteration
             assistantMessage = "";
             toolCalls = [];
-          } else if (choice.finish_reason === "stop") {
+          } else if (choice.finishReason === "stop") {
             if (assistantMessage) {
               mistralMessages.push({
                 role: "assistant",

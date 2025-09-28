@@ -51,6 +51,14 @@ export interface ReasoningEvent extends BaseSSEEvent {
 }
 
 /**
+ * Update event with streaming content from AI
+ */
+export interface UpdateEvent extends BaseSSEEvent {
+  type: SSEEventType.UPDATE;
+  content: string;
+}
+
+/**
  * Done event indicating completion
  */
 export interface DoneEvent extends BaseSSEEvent {
@@ -88,6 +96,7 @@ export interface ActionCompletedEvent extends BaseSSEEvent {
 export type SSEEvent<T extends ComputerModel = ComputerModel> =
   | ActionEvent<T>
   | ReasoningEvent
+  | UpdateEvent
   | DoneEvent
   | ErrorEvent
   | SandboxCreatedEvent

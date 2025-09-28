@@ -2,7 +2,7 @@
  * Type definitions for Surf Computer API and SSE events
  */
 import { ComputerAction } from "@/types/anthropic";
-import { MistralComputerAction } from "@/types/mistral";
+import { MistralComputerAction, MistralToolInput } from "@/types/mistral";
 import { ResponseComputerToolCall } from "openai/resources/responses/responses.mjs";
 
 /**
@@ -38,7 +38,7 @@ export interface ActionEvent<T extends ComputerModel> extends BaseSSEEvent {
   action: T extends "openai"
     ? ResponseComputerToolCall["action"]
     : T extends "mistral"
-    ? MistralComputerAction
+    ? MistralToolInput
     : ComputerAction;
 }
 

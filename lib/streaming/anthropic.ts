@@ -80,13 +80,23 @@ export class AnthropicComputerStreamer
     if (tool.name === "bash") {
       const bashCommand = tool.input;
 
-      switch (bashCommand.command) {
-        case "command": {
-          desktop.commands.run(bashCommand.command);
+      if (bashCommand.restart) {
+        try {
+          await desktop.commands.run("reset");
+          return;
+        } catch (error) {
+          logError("ANTHROPIC_STREAMER", `Error restarting bash: ${error}`);
           return;
         }
+      }
 
-        default: {
+      if (bashCommand.command) {
+        try {
+          await desktop.commands.run(bashCommand.command);
+          return;
+        } catch (error) {
+          logError("ANTHROPIC_STREAMER", `Error executing bash command: ${error}`);
+          return;
         }
       }
 

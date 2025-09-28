@@ -7,7 +7,7 @@ import {
 } from "@/lib/streaming";
 import { ActionResponse } from "@/types/api";
 import { ResolutionScaler } from "./resolution";
-import { MistralComputerAction } from "@/types/mistral";
+import { MistralComputerAction, MistralToolInput, MistralTextEditorCommand, MistralBashCommand } from "@/types/mistral";
 import { logError, logDebug } from "../logger";
 
 const INSTRUCTIONS = `
@@ -71,144 +71,247 @@ export class MistralComputerStreamer
   }
 
   async executeAction(
-    action: MistralComputerAction
+    toolInput: MistralToolInput
   ): Promise<ActionResponse | void> {
     const desktop = this.desktop;
 
-    switch (action.action) {
-      case "screenshot": {
-        // Screenshots are automatic after each action
-        break;
+    // Handle str_replace_editor tool
+    if (toolInput.name === "str_replace_editor") {
+      const editorCommand = toolInput.input as MistralTextEditorCommand;
+
+      switch (editorCommand.command) {
+        case "view": {
+          try {
+            const result = await desktop.commands.run(`cat "${editorCommand.path}"`);
+            const output = result.stdout;
+            if (editorCommand.view_range) {
+              const lines = output.split('\n');
+              const [start, end] = editorCommand.view_range;
+              const selectedLines = lines.slice(start - 1, end);
+              logDebug("MISTRAL_STREAMER", `Viewed file ${editorCommand.path} lines ${start}-${end}: ${selectedLines.join('\n')}`);
+            } else {
+              logDebug("MISTRAL_STREAMER", `Viewed file ${editorCommand.path}: ${output}`);
+            }
+            return;
+          } catch (error) {
+            logError("MISTRAL_STREAMER", `Error viewing file: ${error}`);
+            return;
+          }
+        }
+
+        case "create": {
+          try {
+            await desktop.commands.run(`echo '${editorCommand.file_text.replace(/'/g, "\\'")}' > "${editorCommand.path}"`);
+            logDebug("MISTRAL_STREAMER", `File created: ${editorCommand.path}`);
+            return;
+          } catch (error) {
+            logError("MISTRAL_STREAMER", `Error creating file: ${error}`);
+            return;
+          }
+        }
+
+        case "str_replace": {
+          try {
+            // Use sed to replace text in the file
+            const oldStr = editorCommand.old_str.replace(/'/g, "\\'");
+            const newStr = editorCommand.new_str?.replace(/'/g, "\\'") || "";
+            await desktop.commands.run(`sed -i 's/${oldStr}/${newStr}/g' "${editorCommand.path}"`);
+            logDebug("MISTRAL_STREAMER", `Text replaced in ${editorCommand.path}`);
+            return;
+          } catch (error) {
+            logError("MISTRAL_STREAMER", `Error replacing text: ${error}`);
+            return;
+          }
+        }
+
+        case "insert": {
+          try {
+            const newStr = editorCommand.new_str.replace(/'/g, "\\'");
+            await desktop.commands.run(`sed -i '${editorCommand.insert_line}a\\${newStr}' "${editorCommand.path}"`);
+            logDebug("MISTRAL_STREAMER", `Text inserted at line ${editorCommand.insert_line} in ${editorCommand.path}`);
+            return;
+          } catch (error) {
+            logError("MISTRAL_STREAMER", `Error inserting text: ${error}`);
+            return;
+          }
+        }
+
+        default: {
+          logError("MISTRAL_STREAMER", `Unknown editor command: ${(editorCommand as any).command}`);
+          return;
+        }
+      }
+    }
+
+    // Handle bash tool
+    if (toolInput.name === "bash") {
+      const bashCommand = toolInput.input as MistralBashCommand;
+
+      if (bashCommand.restart) {
+        try {
+          await desktop.commands.run("reset");
+          logDebug("MISTRAL_STREAMER", "Bash session restarted");
+          return;
+        } catch (error) {
+          logError("MISTRAL_STREAMER", `Error restarting bash: ${error}`);
+          return;
+        }
       }
 
-      case "double_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-        if (action.text) {
+      if (bashCommand.command) {
+        try {
+          const result = await desktop.commands.run(bashCommand.command);
+          logDebug("MISTRAL_STREAMER", `Bash command executed: ${bashCommand.command}, output: ${result.stdout}`);
+          return;
+        } catch (error) {
+          logError("MISTRAL_STREAMER", `Error executing bash command: ${error}`);
+          return;
+        }
+      }
+
+      logError("MISTRAL_STREAMER", "Invalid bash command");
+      return;
+    }
+
+    // Handle computer tool (existing logic)
+    if (toolInput.name === "computer") {
+      const action = toolInput.input as MistralComputerAction;
+
+      switch (action.action) {
+        case "screenshot": {
+          // Screenshots are automatic after each action
+          break;
+        }
+
+        case "double_click": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
+          if (action.text) {
+            await desktop.moveMouse(x, y);
+            await desktop.press(action.text);
+          }
+          await desktop.doubleClick(x, y);
+          break;
+        }
+
+        case "triple_click": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
+
           await desktop.moveMouse(x, y);
-          await desktop.press(action.text);
+          if (action.text) {
+            await desktop.press(action.text);
+          }
+          await desktop.leftClick();
+          await desktop.leftClick();
+          await desktop.leftClick();
+          break;
         }
-        await desktop.doubleClick(x, y);
-        break;
-      }
 
-      case "triple_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        case "left_click": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
 
-        await desktop.moveMouse(x, y);
-        if (action.text) {
-          await desktop.press(action.text);
+          if (action.text) {
+            await desktop.moveMouse(x, y);
+            await desktop.press(action.text);
+          }
+          await desktop.leftClick(x, y);
+          break;
         }
-        await desktop.leftClick();
-        await desktop.leftClick();
-        await desktop.leftClick();
-        break;
-      }
 
-      case "left_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
+        case "right_click": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
 
-        if (action.text) {
+          if (action.text) {
+            await desktop.moveMouse(x, y);
+            await desktop.press(action.text);
+          }
+          await desktop.rightClick(x, y);
+          break;
+        }
+
+        case "middle_click": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
+
+          if (action.text) {
+            await desktop.moveMouse(x, y);
+            await desktop.press(action.text);
+          }
+          await desktop.middleClick(x, y);
+          break;
+        }
+
+        case "type": {
+          await desktop.write(action.text);
+          break;
+        }
+
+        case "key": {
+          await desktop.press(action.text);
+          break;
+        }
+
+        case "hold_key": {
+          await desktop.press(action.text);
+          // Note: duration not directly supported by E2B, using simple press
+          break;
+        }
+
+        case "mouse_move": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
           await desktop.moveMouse(x, y);
-          await desktop.press(action.text);
+          break;
         }
-        await desktop.leftClick(x, y);
-        break;
-      }
 
-      case "right_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-
-        if (action.text) {
+        case "scroll": {
+          const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
           await desktop.moveMouse(x, y);
-          await desktop.press(action.text);
+          
+          if (action.scroll_direction === "up") {
+            await desktop.scroll("up", action.scroll_amount);
+          } else if (action.scroll_direction === "down") {
+            await desktop.scroll("down", action.scroll_amount);
+          }
+          break;
         }
-        await desktop.rightClick(x, y);
-        break;
-      }
 
-      case "middle_click": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-
-        if (action.text) {
-          await desktop.moveMouse(x, y);
-          await desktop.press(action.text);
+        case "left_click_drag": {
+          const [startX, startY] = this.resolutionScaler.scaleToOriginalSpace(
+            action.start_coordinate
+          );
+          const [endX, endY] = this.resolutionScaler.scaleToOriginalSpace(
+            action.coordinate
+          );
+          await desktop.drag([startX, startY], [endX, endY]);
+          break;
         }
-        await desktop.middleClick(x, y);
-        break;
-      }
 
-      case "type": {
-        await desktop.write(action.text);
-        break;
-      }
-
-      case "key": {
-        await desktop.press(action.text);
-        break;
-      }
-
-      case "hold_key": {
-        await desktop.press(action.text);
-        // Note: duration not directly supported by E2B, using simple press
-        break;
-      }
-
-      case "mouse_move": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-        await desktop.moveMouse(x, y);
-        break;
-      }
-
-      case "scroll": {
-        const [x, y] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-        await desktop.moveMouse(x, y);
-        
-        if (action.scroll_direction === "up") {
-          await desktop.scroll("up", action.scroll_amount);
-        } else if (action.scroll_direction === "down") {
-          await desktop.scroll("down", action.scroll_amount);
+        case "wait": {
+          await sleep(action.duration * 1000);
+          break;
         }
-        break;
-      }
 
-      case "left_click_drag": {
-        const [startX, startY] = this.resolutionScaler.scaleToOriginalSpace(
-          action.start_coordinate
-        );
-        const [endX, endY] = this.resolutionScaler.scaleToOriginalSpace(
-          action.coordinate
-        );
-        await desktop.drag([startX, startY], [endX, endY]);
-        break;
-      }
+        case "left_mouse_down":
+        case "left_mouse_up":
+        case "cursor_position":
+          // These actions don't have direct E2B equivalents
+          break;
 
-      case "wait": {
-        await sleep(action.duration * 1000);
-        break;
-      }
-
-      case "left_mouse_down":
-      case "left_mouse_up":
-      case "cursor_position":
-        // These actions don't have direct E2B equivalents
-        break;
-
-      default: {
-        logError("MISTRAL_STREAMER", `Unknown action type: ${(action as any).action}`);
+        default: {
+          logError("MISTRAL_STREAMER", `Unknown computer action type: ${(action as any).action}`);
+        }
       }
     }
   }
@@ -300,6 +403,75 @@ export class MistralComputerStreamer
           },
         };
 
+        // Define the bash tool for Mistral
+        const bashTool = {
+          type: "function" as const,
+          function: {
+            name: "bash",
+            description: "Execute bash commands in the terminal to run programs, manage files, install software, etc.",
+            parameters: {
+              type: "object",
+              properties: {
+                command: {
+                  type: "string",
+                  description: "The bash command to execute",
+                },
+                restart: {
+                  type: "boolean",
+                  description: "Whether to restart the bash session",
+                },
+              },
+            },
+          },
+        };
+
+        // Define the str_replace_editor tool for Mistral
+        const strReplaceEditorTool = {
+          type: "function" as const,
+          function: {
+            name: "str_replace_editor",
+            description: "Edit files by viewing, creating, and modifying them. Use this tool to work with code files and text documents.",
+            parameters: {
+              type: "object",
+              properties: {
+                command: {
+                  type: "string",
+                  enum: ["view", "create", "str_replace", "insert", "undo_edit"],
+                  description: "The editing command to execute",
+                },
+                path: {
+                  type: "string",
+                  description: "The file path to work with",
+                },
+                view_range: {
+                  type: "array",
+                  items: { type: "number" },
+                  minItems: 2,
+                  maxItems: 2,
+                  description: "Line range to view (start, end) - only for view command",
+                },
+                file_text: {
+                  type: "string",
+                  description: "Content for creating new files - only for create command",
+                },
+                old_str: {
+                  type: "string",
+                  description: "Text to be replaced - only for str_replace command",
+                },
+                new_str: {
+                  type: "string",
+                  description: "Replacement text - only for str_replace and insert commands",
+                },
+                insert_line: {
+                  type: "number",
+                  description: "Line number to insert text after - only for insert command",
+                },
+              },
+              required: ["command", "path"],
+            },
+          },
+        };
+
         // Get screenshot first
         const screenshot = await this.desktop.screenshot();
         const screenshotInstruction = `Current screenshot of the desktop (${modelResolution[0]}x${modelResolution[1]}): data:image/png;base64,${screenshot}`;
@@ -311,7 +483,7 @@ export class MistralComputerStreamer
             ...mistralMessages,
             { role: "user", content: screenshotInstruction },
           ],
-          tools: [computerTool],
+          tools: [computerTool, bashTool, strReplaceEditorTool],
         });
 
         let assistantMessage = "";
@@ -351,12 +523,18 @@ export class MistralComputerStreamer
               try {
                 const args = JSON.parse(toolCall.function.arguments);
                 
+                // Create tool input based on function name
+                const toolInput: MistralToolInput = {
+                  name: toolCall.function.name as any,
+                  input: args
+                };
+                
                 yield {
                   type: SSEEventType.ACTION,
-                  action: args as MistralComputerAction,
+                  action: toolInput,
                 };
 
-                await this.executeAction(args as MistralComputerAction);
+                await this.executeAction(toolInput);
 
                 yield {
                   type: SSEEventType.ACTION_COMPLETED,

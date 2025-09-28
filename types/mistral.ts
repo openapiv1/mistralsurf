@@ -116,6 +116,62 @@ export type MistralComputerAction =
   | WaitAction
   | ScreenshotAction;
 
+// Text editor command interfaces for str_replace_editor tool
+interface TextEditorCommandBase {
+  command: string;
+  path: string;
+}
+
+interface ViewCommand extends TextEditorCommandBase {
+  command: "view";
+  view_range?: [number, number];
+}
+
+interface CreateCommand extends TextEditorCommandBase {
+  command: "create";
+  file_text: string;
+}
+
+interface StrReplaceCommand extends TextEditorCommandBase {
+  command: "str_replace";
+  old_str: string;
+  new_str?: string;
+}
+
+interface InsertCommand extends TextEditorCommandBase {
+  command: "insert";
+  insert_line: number;
+  new_str: string;
+}
+
+interface UndoEditCommand extends TextEditorCommandBase {
+  command: "undo_edit";
+}
+
+export type MistralTextEditorCommand =
+  | ViewCommand
+  | CreateCommand
+  | StrReplaceCommand
+  | InsertCommand
+  | UndoEditCommand;
+
+// Bash command type for bash tool
+export type MistralBashCommand =
+  | {
+      command: string;
+      restart?: never;
+    }
+  | {
+      command?: never;
+      restart: true;
+    };
+
+// Union type for all tool inputs
+export type MistralToolInput =
+  | { name: "computer"; input: MistralComputerAction }
+  | { name: "str_replace_editor"; input: MistralTextEditorCommand }
+  | { name: "bash"; input: MistralBashCommand };
+
 // Mistral AI message types
 export interface MistralMessage {
   role: "user" | "assistant" | "system";
